@@ -80,7 +80,10 @@ public final class MenuBarController: NSObject, NSWindowDelegate {
         
         if let angleItem = self.angleMenuItem {
             if isConnected {
-                let status = AppSettings.shared.isClosing ? "Closing (\(Int(angle))°)" : "Idle (\(Int(angle))°)"
+                let isFolded = angle < AppSettings.shared.startTiltAngle
+                let status = AppSettings.shared.isClosing
+                    ? "Closing (\(Int(angle))°)"
+                    : (isFolded ? "Opening (\(Int(angle))°)" : "Idle (\(Int(angle))°)")
                 angleItem.title = "Lid: \(status)"
             } else {
                 angleItem.title = "Lid Sensor: Disconnected"

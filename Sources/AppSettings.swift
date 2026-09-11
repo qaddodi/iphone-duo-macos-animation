@@ -26,11 +26,15 @@ public final class AppSettings: ObservableObject {
     // MARK: - Persistent User Defaults Keys
     private let kStartTiltAngle = "mactilt_startTiltAngle"
     private let kEndTiltAngle = "mactilt_endTiltAngle"
-    private let kFollowSpeed = "mactilt_followSpeed"
+    private let kClosingFollowSpeed = "mactilt_closingFollowSpeed"
+    private let kOpeningFollowSpeed = "mactilt_openingFollowSpeed"
     private let kImageSourceMode = "mactilt_imageSourceMode"
     private let kCustomImagePath = "mactilt_customImagePath"
     private let kBlurStrength = "mactilt_blurStrength"
     private let kReflectionIntensity = "mactilt_reflectionIntensity"
+    private let kBlurCurve = "mactilt_blurCurve"
+    private let kPerspectiveStrength = "mactilt_perspectiveStrength"
+    private let kDarknessStrength = "mactilt_darknessStrength"
     private let kShowAngleInMenuBar = "mactilt_showAngleInMenuBar"
     private let kHasCompletedOnboarding = "mactilt_hasCompletedOnboarding"
     
@@ -47,8 +51,12 @@ public final class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(endTiltAngle, forKey: kEndTiltAngle) }
     }
     
-    @Published public var followSpeed: Double {
-        didSet { UserDefaults.standard.set(followSpeed, forKey: kFollowSpeed) }
+    @Published public var closingFollowSpeed: Double {
+        didSet { UserDefaults.standard.set(closingFollowSpeed, forKey: kClosingFollowSpeed) }
+    }
+
+    @Published public var openingFollowSpeed: Double {
+        didSet { UserDefaults.standard.set(openingFollowSpeed, forKey: kOpeningFollowSpeed) }
     }
     
     @Published public var imageSourceMode: ImageSourceMode {
@@ -65,6 +73,18 @@ public final class AppSettings: ObservableObject {
     
     @Published public var reflectionIntensity: Double {
         didSet { UserDefaults.standard.set(reflectionIntensity, forKey: kReflectionIntensity) }
+    }
+
+    @Published public var blurCurve: Double {
+        didSet { UserDefaults.standard.set(blurCurve, forKey: kBlurCurve) }
+    }
+
+    @Published public var perspectiveStrength: Double {
+        didSet { UserDefaults.standard.set(perspectiveStrength, forKey: kPerspectiveStrength) }
+    }
+
+    @Published public var darknessStrength: Double {
+        didSet { UserDefaults.standard.set(darknessStrength, forKey: kDarknessStrength) }
     }
     
     @Published public var showAngleInMenuBar: Bool {
@@ -98,7 +118,9 @@ public final class AppSettings: ObservableObject {
         self.hasCompletedOnboarding = defaults.bool(forKey: kHasCompletedOnboarding)
         self.startTiltAngle = defaults.object(forKey: kStartTiltAngle) != nil ? defaults.double(forKey: kStartTiltAngle) : 115.0
         self.endTiltAngle = defaults.object(forKey: kEndTiltAngle) != nil ? defaults.double(forKey: kEndTiltAngle) : 3.0
-        self.followSpeed = defaults.object(forKey: kFollowSpeed) != nil ? defaults.double(forKey: kFollowSpeed) : 16.0
+        let legacyFollowSpeed = defaults.object(forKey: "mactilt_followSpeed") != nil ? defaults.double(forKey: "mactilt_followSpeed") : 16.0
+        self.closingFollowSpeed = defaults.object(forKey: kClosingFollowSpeed) != nil ? defaults.double(forKey: kClosingFollowSpeed) : legacyFollowSpeed
+        self.openingFollowSpeed = defaults.object(forKey: kOpeningFollowSpeed) != nil ? defaults.double(forKey: kOpeningFollowSpeed) : 20.0
         
         let savedSource = defaults.integer(forKey: kImageSourceMode)
         self.imageSourceMode = defaults.object(forKey: kImageSourceMode) != nil ? (ImageSourceMode(rawValue: savedSource) ?? .liveCapture) : .liveCapture
@@ -106,6 +128,9 @@ public final class AppSettings: ObservableObject {
         self.customImagePath = defaults.string(forKey: kCustomImagePath) ?? ""
         self.blurStrength = defaults.object(forKey: kBlurStrength) != nil ? defaults.double(forKey: kBlurStrength) : 0.5
         self.reflectionIntensity = defaults.object(forKey: kReflectionIntensity) != nil ? defaults.double(forKey: kReflectionIntensity) : 0.0
+        self.blurCurve = defaults.object(forKey: kBlurCurve) != nil ? defaults.double(forKey: kBlurCurve) : 1.25
+        self.perspectiveStrength = defaults.object(forKey: kPerspectiveStrength) != nil ? defaults.double(forKey: kPerspectiveStrength) : 1.0
+        self.darknessStrength = defaults.object(forKey: kDarknessStrength) != nil ? defaults.double(forKey: kDarknessStrength) : 1.0
         
         self.showAngleInMenuBar = defaults.object(forKey: kShowAngleInMenuBar) != nil ? defaults.bool(forKey: kShowAngleInMenuBar) : true
         
@@ -143,11 +168,6 @@ public final class AppSettings: ObservableObject {
         
         // User is using MacBook normally: do nothing
         if angle >= startTiltAngle {
-            return 0.0
-        }
-        
-        // If opening or not closing: do nothing
-        if !isLidClosing {
             return 0.0
         }
         

@@ -11,6 +11,9 @@ struct Uniforms {
     float turn;
     float blurStrength;
     float reflectionIntensity;
+    float blurCurve;
+    float perspectiveStrength;
+    float darknessStrength;
 };
 
 struct VertexOut {
@@ -45,11 +48,6 @@ inline float3 sampleSmoothMatteBlur(texture2d<float> tex,
                                     float2 screenCoord) {
     float2 tuv = (uv - 0.5) * cover + 0.5;
     
-    // When radius is near zero, return razor-sharp native Retina sample at level 0
-    if (radius <= 0.15) {
-        return tex.sample(s, tuv, level(0.0)).rgb;
-    }
-    
     // CRITICAL FIX FOR PIXELATION:
     // Previously, `lod = log2(radius)` scaled unchecked into levels 4-6 (45x29 texels),
     // causing massive pixel blocks and severe aliasing that worsened with tilt.
@@ -58,7 +56,7 @@ inline float3 sampleSmoothMatteBlur(texture2d<float> tex,
     // than 3-4 physical screen pixels. Combined with a dense 32-sample Vogel Disc
     // (Golden Angle spiral) and trilinear filtering, the blur is 100% continuous,
     // velvety, and free of blocky pixelation at all tilt angles.
-    float baseLod = clamp(log2(max(1.0, radius * 0.18)), 0.0, 1.85);
+    float baseLod = clamp(log2(1.0 + radius * 0.18), 0.0, 1.85);
     
     // Subtle sub-pixel micro-rotation per screen pixel eliminates ring banding
     // and produces a natural, tactile frosted-glass matte dispersion.
@@ -131,7 +129,7 @@ fragment float4 foldFragment(VertexOut in [[stage_in]],
     // Stable perspective projection that spans the whole closing arc without exploding
     float invAspect = 1.0 / max(0.1, u.aspect);
     float eye = 3.2 * max(invAspect, 1.0);
-    float depth = fromHinge * (0.80 * invAspect) * sine;
+    float depth = fromHinge * (0.80 * invAspect) * sine * max(0.0, u.perspectiveStrength);
     float perspective = eye / max(0.01, (eye - depth));
     
     float2 plane;
@@ -139,8 +137,8 @@ fragment float4 foldFragment(VertexOut in [[stage_in]],
     plane.x = 0.5 + (in.uv.x - 0.5) * perspective;
     
     // Defocus blur: smooth progression that remains continuous and silky
-    float blurSpread = pow(smoothstep(0.0, 0.85, fromHinge), 1.2);
-    float motion = smoothstep(0.0, 1.0, turn) * mix(0.20, 1.0, blurSpread);
+    float blurSpread = pow(smoothstep(0.0, 0.85, fromHinge), max(0.25, u.blurCurve));
+    float motion = pow(turn, max(0.25, u.blurCurve)) * mix(0.20, 1.0, blurSpread);
     float radius = 56.0 * motion * max(0.05, u.blurStrength);
     
     // Side margins softness
@@ -159,7 +157,7 @@ fragment float4 foldFragment(VertexOut in [[stage_in]],
     // Smooth void fade: gradual falloff that only fully darkens at the very end
     float fadeDistance = clamp((fromHinge - 0.20) / 0.80, 0.0, 1.0);
     float voidAmount = pow(turn, 1.1) * fadeDistance;
-    color *= (1.0 - 0.80 * voidAmount);
+    color *= (1.0 - clamp(0.80 * u.darknessStrength, 0.0, 1.0) * voidAmount);
     
     // Final closure into deep black right as the lid completely shuts (turn > 0.90)
     float finalClose = 1.0 - smoothstep(0.90, 1.0, turn);

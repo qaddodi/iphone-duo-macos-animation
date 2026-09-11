@@ -1,5 +1,14 @@
 # macTilt
 
+macTilt turns the physical MacBook lid angle into a reversible, full-display
+clamshell animation. The live frame is captured before the overlay becomes
+visible, including the menu bar, and the built-in panel is matched by display
+ID on multi-display setups.
+
+The control panel includes independent opening and closing responsiveness,
+adjustable fold angles, continuous blur, perspective, reflection, darkness,
+live preview, and Natural, Cinematic, and Snappy presets.
+
 The **macTilt** 3D clamshell fold animation for MacBooks driven by the physical lid angle sensor.
 
 > *"When the lid closes, the picture on its screen stays where it is in space while the hardware sweeps through it: the image frosts over and slips into black without ever changing its size."*

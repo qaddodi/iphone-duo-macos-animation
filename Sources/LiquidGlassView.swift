@@ -18,7 +18,8 @@ public struct LiquidGlassControlPanel: View {
     @ObservedObject var settings: AppSettings = AppSettings.shared
     @State private var copiedResetCommand: Bool = false
     @State private var showingPermissionTroubleshooting: Bool = false
-    private let resetCommand = "tccutil reset ScreenCapture com.lqsky7.mactilt"
+    @State private var showingAdvanced: Bool = false
+    private let resetCommand = "tccutil reset ScreenCapture com.qaddodi.mactilt"
     
     public init() {}
     
@@ -64,7 +65,7 @@ public struct LiquidGlassControlPanel: View {
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
         }
-        .frame(width: 500, height: 650)
+        .frame(width: 520, height: 700)
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear {
             settings.refreshPermissions()
@@ -239,12 +240,12 @@ public struct LiquidGlassControlPanel: View {
                     .fill(Color.green)
                     .frame(width: 8, height: 8)
                 
-                Text("Zero Idle Battery Impact")
+                Text("Efficient Idle Monitoring")
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundStyle(Color.green)
                 
-                InfoButton("Battery Efficiency", content: "macTilt is 100% dormant with 0 Hz background polling during normal use. Capture is pre-armed exclusively in the millisecond you start closing your display (~95°). Metal rendering is paused until the clamshell fold begins.")
+                InfoButton("Battery Efficiency", content: "The lightweight lid sensor remains active while the expensive screen-capture and Metal rendering paths stay dormant during normal use. Capture is pre-armed only when closing approaches the configured start angle.")
                 
                 Spacer()
                 
@@ -365,53 +366,69 @@ public struct LiquidGlassControlPanel: View {
     private var animationPhysicsCard: some View {
         HCISectionCard(title: "Physics & Shaders", icon: "slider.horizontal.3") {
             VStack(spacing: 12) {
-                // Follow Speed
+                HStack(spacing: 8) {
+                    Button("Natural") { applyPreset(.natural) }
+                    Button("Cinematic") { applyPreset(.cinematic) }
+                    Button("Snappy") { applyPreset(.snappy) }
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+
+                Divider()
+
                 VStack(alignment: .leading, spacing: 4) {
                     HStack {
-                        Text("Follow Responsiveness")
+                        Text("Closing Responsiveness")
                             .font(.subheadline)
                         
                         InfoButton("Follow Speed", content: "Controls the exponential smoothing physics of the display turn.")
                         
                         Spacer()
                         
-                        Text(String(format: "%.0f", settings.followSpeed))
+                        Text(String(format: "%.0f", settings.closingFollowSpeed))
                             .font(.subheadline)
                             .fontWeight(.semibold)
                             .monospacedDigit()
                     }
-                    Slider(value: $settings.followSpeed, in: 6...30, step: 1)
+                    Slider(value: $settings.closingFollowSpeed, in: 6...36, step: 1)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Opening Responsiveness")
+                            .font(.subheadline)
+                        Spacer()
+                        Text(String(format: "%.0f", settings.openingFollowSpeed))
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .monospacedDigit()
+                    }
+                    Slider(value: $settings.openingFollowSpeed, in: 6...36, step: 1)
                 }
                 
                 Divider()
                 
-                // Blur and Glass Dual Sliders
-                HStack(spacing: 20) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Blur Intensity")
-                                .font(.subheadline)
-                            Spacer()
-                            Text(String(format: "%.1fx", settings.blurStrength))
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $settings.blurStrength, in: 0.2...2.0, step: 0.1)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Blur Amount")
+                            .font(.subheadline)
+                        Spacer()
+                        Text(String(format: "%.1fx", settings.blurStrength))
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .monospacedDigit()
                     }
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Glass Reflection")
-                                .font(.subheadline)
-                            Spacer()
-                            Text(String(format: "%.1fx", settings.reflectionIntensity))
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $settings.reflectionIntensity, in: 0.0...2.5, step: 0.1)
+                    Slider(value: $settings.blurStrength, in: 0.0...2.0, step: 0.1)
+                }
+
+                DisclosureGroup("Advanced", isExpanded: $showingAdvanced) {
+                    VStack(spacing: 10) {
+                        advancedSlider("Blur Curve", value: $settings.blurCurve, range: 0.4...2.5)
+                        advancedSlider("Perspective", value: $settings.perspectiveStrength, range: 0.0...2.0)
+                        advancedSlider("Reflection / Highlight", value: $settings.reflectionIntensity, range: 0.0...2.5)
+                        advancedSlider("Darkness / Void", value: $settings.darknessStrength, range: 0.0...1.25)
                     }
+                    .padding(.top, 8)
                 }
             }
         }
@@ -482,10 +499,14 @@ public struct LiquidGlassControlPanel: View {
             Button("Reset to Defaults") {
                 settings.startTiltAngle = 115.0
                 settings.endTiltAngle = 3.0
-                settings.followSpeed = 16.0
+                settings.closingFollowSpeed = 16.0
+                settings.openingFollowSpeed = 20.0
                 settings.imageSourceMode = .liveCapture
                 settings.blurStrength = 0.5
                 settings.reflectionIntensity = 0.0
+                settings.blurCurve = 1.25
+                settings.perspectiveStrength = 1.0
+                settings.darknessStrength = 1.0
                 settings.showAngleInMenuBar = true
                 settings.isTestModeActive = false
                 settings.testTurnValue = 0.0
@@ -510,6 +531,50 @@ public struct LiquidGlassControlPanel: View {
             .buttonStyle(.glassProminent)
             .controlSize(.regular)
             .keyboardShortcut(.defaultAction)
+        }
+    }
+
+    private enum AnimationPreset { case natural, cinematic, snappy }
+
+    private func applyPreset(_ preset: AnimationPreset) {
+        switch preset {
+        case .natural:
+            settings.closingFollowSpeed = 16
+            settings.openingFollowSpeed = 20
+            settings.blurStrength = 0.5
+            settings.blurCurve = 1.25
+            settings.perspectiveStrength = 1.0
+            settings.reflectionIntensity = 0.0
+            settings.darknessStrength = 1.0
+        case .cinematic:
+            settings.closingFollowSpeed = 10
+            settings.openingFollowSpeed = 12
+            settings.blurStrength = 1.1
+            settings.blurCurve = 1.55
+            settings.perspectiveStrength = 1.25
+            settings.reflectionIntensity = 0.8
+            settings.darknessStrength = 1.1
+        case .snappy:
+            settings.closingFollowSpeed = 28
+            settings.openingFollowSpeed = 32
+            settings.blurStrength = 0.25
+            settings.blurCurve = 0.9
+            settings.perspectiveStrength = 0.85
+            settings.reflectionIntensity = 0.2
+            settings.darknessStrength = 0.9
+        }
+    }
+
+    private func advancedSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(title).font(.caption)
+                Spacer()
+                Text(String(format: "%.1fx", value.wrappedValue))
+                    .font(.caption2)
+                    .monospacedDigit()
+            }
+            Slider(value: value, in: range, step: 0.1)
         }
     }
     
@@ -604,4 +669,3 @@ private struct InfoButton: View {
         }
     }
 }
-

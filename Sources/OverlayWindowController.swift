@@ -6,8 +6,16 @@ public final class OverlayWindowController: NSObject {
     
     private var window: NSWindow?
     private var metalView: MetalFoldView?
-    private var isCapturing = false
-    private var wasZeroTurn = true
+    private enum OverlayPhase {
+        case hidden
+        case capturing(UUID)
+        case armed
+        case visible
+    }
+
+    private var phase: OverlayPhase = .hidden
+    private var requestedTurn: Double = 0
+    private var wasActive = false
     
     public override init() {
         super.init()
@@ -28,16 +36,20 @@ public final class OverlayWindowController: NSObject {
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             self?.handleSleep()
         }
+        ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.prepareFreshFrame()
+        }
     }
     
     private func handleSleep() {
         metalView?.isPaused = true
         window?.alphaValue = 0.0
         AppSettings.shared.isScreenCaptureDormant = true
+        phase = .hidden
     }
     
     private func setupWindow() {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
+        guard let screen = ScreenCapture.builtInScreen ?? NSScreen.main ?? NSScreen.screens.first else { return }
         
         let win = NSWindow(
             contentRect: screen.frame,
@@ -63,7 +75,7 @@ public final class OverlayWindowController: NSObject {
         
         // One-time initial image load in background during app launch
         Task {
-            if let img = await ScreenCapture.shared.fetchImage() {
+            if let img = await ScreenCapture.shared.fetchImage(for: screen) {
                 await MainActor.run {
                     self.metalView?.updateImage(img)
                     AppSettings.shared.lastCaptureDate = Date()
@@ -78,52 +90,73 @@ public final class OverlayWindowController: NSObject {
         
         mv.currentTurn = Float(turn)
         
-        // Only trigger when closing and turn > 0
+        requestedTurn = turn
         if turn > 0.0001 {
-            if wasZeroTurn {
-                wasZeroTurn = false
-                // If pre-arm hasn't finished or was skipped, trigger emergency snapshot
-                if AppSettings.shared.imageSourceMode == .liveCapture {
-                    captureScreenAsync()
-                }
+            wasActive = true
+            switch phase {
+            case .armed, .visible:
+                phase = .visible
+                mv.isPaused = false
+                win.alphaValue = 1.0
+                win.orderFrontRegardless()
+            case .hidden:
+                captureScreenAsync()
+            case .capturing:
+                break
             }
-            
-            mv.isPaused = false
-            win.alphaValue = 1.0
-            win.orderFrontRegardless()
         } else {
-            wasZeroTurn = true
             win.alphaValue = 0.0
             mv.isPaused = true
+            if wasActive {
+                wasActive = false
+                phase = .hidden
+            }
         }
     }
     
     public func stopOverlay() {
-        wasZeroTurn = true
+        wasActive = false
+        requestedTurn = 0
+        phase = .hidden
         window?.alphaValue = 0.0
         metalView?.isPaused = true
         metalView?.currentTurn = 0.0
     }
     
     public func captureScreenAsync() {
-        guard !isCapturing else { return }
-        isCapturing = true
+        if case .capturing = phase { return }
+        let generation = UUID()
+        phase = .capturing(generation)
+        window?.alphaValue = 0.0
+        metalView?.isPaused = true
         AppSettings.shared.isScreenCaptureDormant = false
+        let screen = ScreenCapture.builtInScreen ?? NSScreen.main ?? NSScreen.screens.first
         
         Task {
-            if let image = await ScreenCapture.shared.fetchImage() {
-                await MainActor.run {
+            let image = await ScreenCapture.shared.fetchImage(for: screen)
+            await MainActor.run {
+                guard case .capturing(let currentGeneration) = self.phase,
+                      currentGeneration == generation else { return }
+                if let image {
                     self.metalView?.updateImage(image)
-                    self.isCapturing = false
+                    self.phase = .armed
                     AppSettings.shared.lastCaptureDate = Date()
-                    AppSettings.shared.isScreenCaptureDormant = true
+                    if self.requestedTurn > 0.0001 {
+                        self.phase = .visible
+                        self.metalView?.isPaused = false
+                        self.window?.alphaValue = 1.0
+                        self.window?.orderFrontRegardless()
+                    }
+                } else {
+                    self.phase = .hidden
                 }
-            } else {
-                await MainActor.run {
-                    self.isCapturing = false
-                    AppSettings.shared.isScreenCaptureDormant = true
-                }
+                AppSettings.shared.isScreenCaptureDormant = true
             }
         }
+    }
+
+    private func prepareFreshFrame() {
+        phase = .hidden
+        captureScreenAsync()
     }
 }

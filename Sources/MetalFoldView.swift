@@ -10,19 +10,28 @@ public struct Uniforms {
     public var turn: Float
     public var blurStrength: Float
     public var reflectionIntensity: Float
+    public var blurCurve: Float
+    public var perspectiveStrength: Float
+    public var darknessStrength: Float
     
     public init(imageSize: SIMD2<Float> = .init(1, 1),
                 cover: SIMD2<Float> = .init(1, 1),
                 aspect: Float = 1.0,
                 turn: Float = 0.0,
                 blurStrength: Float = 1.0,
-                reflectionIntensity: Float = 1.0) {
+                reflectionIntensity: Float = 1.0,
+                blurCurve: Float = 1.25,
+                perspectiveStrength: Float = 1.0,
+                darknessStrength: Float = 1.0) {
         self.imageSize = imageSize
         self.cover = cover
         self.aspect = aspect
         self.turn = turn
         self.blurStrength = blurStrength
         self.reflectionIntensity = reflectionIntensity
+        self.blurCurve = blurCurve
+        self.perspectiveStrength = perspectiveStrength
+        self.darknessStrength = darknessStrength
     }
 }
 
@@ -208,7 +217,10 @@ public final class MetalFoldView: MTKView, MTKViewDelegate {
             aspect: aspect,
             turn: currentTurn,
             blurStrength: Float(settings.blurStrength),
-            reflectionIntensity: Float(settings.reflectionIntensity)
+            reflectionIntensity: Float(settings.reflectionIntensity),
+            blurCurve: Float(settings.blurCurve),
+            perspectiveStrength: Float(settings.perspectiveStrength),
+            darknessStrength: Float(settings.darknessStrength)
         )
         
         encoder.setRenderPipelineState(pipeline)

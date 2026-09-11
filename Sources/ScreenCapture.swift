@@ -76,12 +76,12 @@ public final class ScreenCapture {
     }
     
     /// Capture the screen or load appropriate image based on settings
-    public func fetchImage() async -> CGImage? {
+    public func fetchImage(for screen: NSScreen? = nil) async -> CGImage? {
         let settings = AppSettings.shared
         
         switch settings.imageSourceMode {
         case .liveCapture:
-            if await verifyPermissionAsync(), let img = await captureLiveScreen() {
+            if await verifyPermissionAsync(), let img = await captureLiveScreen(for: screen) {
                 return img
             }
             // Fallback if permission not granted or capture failed
@@ -104,7 +104,7 @@ public final class ScreenCapture {
     }
     
     /// Live display capture using ScreenCaptureKit
-    public func captureLiveScreen() async -> CGImage? {
+    public func captureLiveScreen(for requestedScreen: NSScreen? = nil) async -> CGImage? {
         do {
             let content: SCShareableContent
             if #available(macOS 14.4, *) {
@@ -112,7 +112,16 @@ public final class ScreenCapture {
             } else {
                 content = try await SCShareableContent.current
             }
-            guard let display = content.displays.first else { return nil }
+            let screen = requestedScreen ?? Self.builtInScreen ?? NSScreen.main ?? NSScreen.screens.first
+            guard let screen,
+                  let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return nil
+            }
+            let displayID = CGDirectDisplayID(screenNumber.uint32Value)
+            guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
+                print("[ScreenCapture] No SCDisplay matched NSScreen display ID \(displayID)")
+                return nil
+            }
             
             // Exclude our own app's windows
             let currentAppPID = NSRunningApplication.current.processIdentifier
@@ -120,6 +129,9 @@ public final class ScreenCapture {
             
             let scale = NSScreen.main?.backingScaleFactor ?? 2.0
             let filter = SCContentFilter(display: display, excludingWindows: excludedWindows)
+            if #available(macOS 14.2, *) {
+                filter.includeMenuBar = true
+            }
             let config = SCStreamConfiguration()
             config.width = Int(Double(display.width) * scale)
             config.height = Int(Double(display.height) * scale)
@@ -131,6 +143,15 @@ public final class ScreenCapture {
         } catch {
             print("[ScreenCapture] ScreenCaptureKit error: \(error)")
             return nil
+        }
+    }
+
+    public static var builtInScreen: NSScreen? {
+        NSScreen.screens.first { screen in
+            guard let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+                return false
+            }
+            return CGDisplayIsBuiltin(CGDirectDisplayID(number.uint32Value)) != 0
         }
     }
     

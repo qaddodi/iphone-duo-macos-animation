@@ -178,7 +178,8 @@ public final class LidSensor {
             }
         }
         
-        // Compute target turn: only when closing and below startTiltAngle
+        // Progress follows the physical angle in both directions. Direction is
+        // used only to select responsiveness and for status reporting.
         targetTurn = settings.normalizedTurn(for: currentRawAngle, isLidClosing: isActivelyClosing)
         
         // Follow easing physics
@@ -191,7 +192,7 @@ public final class LidSensor {
         }
         lastTime = now
         
-        let follow = settings.followSpeed
+        let follow = isActivelyClosing ? settings.closingFollowSpeed : settings.openingFollowSpeed
         let factor = 1.0 - exp(-dt * follow)
         displayTurn += (targetTurn - displayTurn) * factor
         if abs(targetTurn - displayTurn) < 0.0005 {
