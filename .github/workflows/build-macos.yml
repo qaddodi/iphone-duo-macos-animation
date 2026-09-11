@@ -1,0 +1,59 @@
+name: Build macTilt App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/build-macos.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build application bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="build/macTilt.app"
+          CONTENTS="$APP/Contents"
+          MACOS="$CONTENTS/MacOS"
+          RESOURCES="$CONTENTS/Resources"
+
+          mkdir -p "$MACOS" "$RESOURCES"
+
+          xcrun -sdk macosx metal -c Sources/FoldShaders.metal -o build/FoldShaders.air
+          xcrun -sdk macosx metallib build/FoldShaders.air -o "$RESOURCES/default.metallib"
+
+          swiftc -O Sources/*.swift \
+            -o "$MACOS/macTilt" \
+            -framework AppKit \
+            -framework SwiftUI \
+            -framework Metal \
+            -framework MetalKit \
+            -framework ScreenCaptureKit \
+            -framework IOKit \
+            -framework QuartzCore
+
+          cp Info.plist "$CONTENTS/Info.plist"
+          cp Sources/FoldShaders.metal "$RESOURCES/FoldShaders.metal"
+          cp Resources/default.png "$RESOURCES/default.png"
+          cp Resources/AppIcon.icns "$RESOURCES/AppIcon.icns"
+          cp Resources/AppIcon.png "$RESOURCES/AppIcon.png"
+          cp Resources/AppIcon.svg "$RESOURCES/AppIcon.svg"
+
+          codesign --force --deep --sign - "$APP"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" build/macTilt.app.zip
+
+      - name: Upload macTilt
+        uses: actions/upload-artifact@v4
+        with:
+          name: macTilt-app
+          path: build/macTilt.app.zip
+          if-no-files-found: error
+          retention-days: 30
