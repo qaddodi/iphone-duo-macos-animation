@@ -1,11 +1,10 @@
-name: Build macTilt App
+name: Build Tiltglass Release
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
-    paths:
-      - ".github/workflows/build-macos.yml"
+    branches:
+      - tiltglass-release-20260917
 
 permissions:
   contents: read
@@ -13,47 +12,96 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build application bundle
+      - name: Build Tiltglass
         shell: bash
         run: |
           set -euo pipefail
-          APP="build/macTilt.app"
+
+          APP="build/Tiltglass.app"
           CONTENTS="$APP/Contents"
           MACOS="$CONTENTS/MacOS"
           RESOURCES="$CONTENTS/Resources"
 
+          rm -rf build
           mkdir -p "$MACOS" "$RESOURCES"
 
           xcrun -sdk macosx metal -c Sources/FoldShaders.metal -o build/FoldShaders.air
           xcrun -sdk macosx metallib build/FoldShaders.air -o "$RESOURCES/default.metallib"
 
-          swiftc -O Sources/*.swift \
-            -o "$MACOS/macTilt" \
-            -framework AppKit \
-            -framework SwiftUI \
-            -framework Metal \
-            -framework MetalKit \
-            -framework ScreenCaptureKit \
-            -framework IOKit \
+          FRAMEWORKS=(
+            -framework AppKit
+            -framework SwiftUI
+            -framework Metal
+            -framework MetalKit
+            -framework ScreenCaptureKit
+            -framework IOKit
             -framework QuartzCore
+            -framework ServiceManagement
+          )
+
+          swiftc -O -target arm64-apple-macos14.0 Sources/*.swift \
+            -o build/Tiltglass-arm64 "${FRAMEWORKS[@]}"
+
+          swiftc -O -target x86_64-apple-macos14.0 Sources/*.swift \
+            -o build/Tiltglass-x86_64 "${FRAMEWORKS[@]}"
+
+          lipo -create \
+            build/Tiltglass-arm64 \
+            build/Tiltglass-x86_64 \
+            -output "$MACOS/Tiltglass"
 
           cp Info.plist "$CONTENTS/Info.plist"
           cp Sources/FoldShaders.metal "$RESOURCES/FoldShaders.metal"
           cp Resources/default.png "$RESOURCES/default.png"
-          cp Resources/AppIcon.icns "$RESOURCES/AppIcon.icns"
-          cp Resources/AppIcon.png "$RESOURCES/AppIcon.png"
-          cp Resources/AppIcon.svg "$RESOURCES/AppIcon.svg"
+
+          mkdir -p build/icon-render
+          qlmanage -t -s 1024 -o build/icon-render Resources/TiltglassIcon.svg >/dev/null 2>&1 || true
+
+          if [ -f build/icon-render/TiltglassIcon.svg.png ]; then
+            cp build/icon-render/TiltglassIcon.svg.png "$RESOURCES/AppIcon.png"
+            ICONSET="build/AppIcon.iconset"
+            mkdir -p "$ICONSET"
+
+            sips -z 16 16     "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_16x16.png" >/dev/null
+            sips -z 32 32     "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_16x16@2x.png" >/dev/null
+            sips -z 32 32     "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_32x32.png" >/dev/null
+            sips -z 64 64     "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_32x32@2x.png" >/dev/null
+            sips -z 128 128   "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_128x128.png" >/dev/null
+            sips -z 256 256   "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_128x128@2x.png" >/dev/null
+            sips -z 256 256   "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_256x256.png" >/dev/null
+            sips -z 512 512   "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_256x256@2x.png" >/dev/null
+            sips -z 512 512   "$RESOURCES/AppIcon.png" --out "$ICONSET/icon_512x512.png" >/dev/null
+            cp "$RESOURCES/AppIcon.png" "$ICONSET/icon_512x512@2x.png"
+
+            iconutil -c icns "$ICONSET" -o "$RESOURCES/AppIcon.icns"
+          else
+            cp Resources/AppIcon.icns "$RESOURCES/AppIcon.icns"
+            cp Resources/AppIcon.png "$RESOURCES/AppIcon.png"
+          fi
+
+          cp Resources/TiltglassIcon.svg "$RESOURCES/TiltglassIcon.svg"
 
           codesign --force --deep --sign - "$APP"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" build/macTilt.app.zip
+          codesign --verify --deep --strict "$APP"
 
-      - name: Upload macTilt
+          ditto -c -k --sequesterRsrc --keepParent "$APP" build/Tiltglass.app.zip
+          git archive --format=zip --output build/Tiltglass-source.zip HEAD
+
+          file "$MACOS/Tiltglass"
+          plutil -p "$CONTENTS/Info.plist"
+          shasum -a 256 build/Tiltglass.app.zip build/Tiltglass-source.zip | tee build/SHA256SUMS.txt
+
+      - name: Upload Tiltglass release
         uses: actions/upload-artifact@v4
         with:
-          name: macTilt-app
-          path: build/macTilt.app.zip
+          name: Tiltglass-release
+          path: |
+            build/Tiltglass.app.zip
+            build/Tiltglass-source.zip
+            build/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30

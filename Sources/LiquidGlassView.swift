@@ -1,583 +1,652 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
-// Adaptive systemGray6 matching Apple HCI for macOS dark/light mode
-private let cardBackground = Color(nsColor: NSColor(name: nil, dynamicProvider: { appearance in
+private let panelBackground = Color(nsColor: NSColor(name: nil, dynamicProvider: { appearance in
     appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        ? NSColor(red: 0.14, green: 0.14, blue: 0.16, alpha: 1.0) // macOS systemGray6 dark
-        : NSColor(red: 0.95, green: 0.95, blue: 0.97, alpha: 1.0) // macOS systemGray6 light
+        ? NSColor(red: 0.055, green: 0.062, blue: 0.078, alpha: 1.0)
+        : NSColor(red: 0.955, green: 0.965, blue: 0.978, alpha: 1.0)
 }))
 
-private let cardBorder = Color(nsColor: NSColor(name: nil, dynamicProvider: { appearance in
-    appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-        ? NSColor(white: 1.0, alpha: 0.08)
-        : NSColor(white: 0.0, alpha: 0.08)
-}))
+private let borderColor = Color.primary.opacity(0.10)
 
 public struct LiquidGlassControlPanel: View {
-    @ObservedObject var settings: AppSettings = AppSettings.shared
-    @State private var copiedResetCommand: Bool = false
-    @State private var showingPermissionTroubleshooting: Bool = false
-    @State private var showingAdvanced: Bool = false
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var section: PanelSection = .setup
+    @State private var newPresetName = ""
+    @State private var showingPresetSave = false
+    @State private var copiedResetCommand = false
+
     private let resetCommand = "tccutil reset ScreenCapture com.qaddodi.mactilt"
-    
+
     public init() {}
-    
+
     public var body: some View {
         VStack(spacing: 0) {
-            // Top Header Bar
-            headerBar
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-                .padding(.bottom, 14)
-            
-            Divider()
-            
-            // Main Settings Scroll Area (All cards match exactly in horizontal width)
-            ScrollView {
-                VStack(spacing: 14) {
-                    // Screen Recording Permission Card
-                    permissionCard
-                    
-                    // Battery & Performance Card
-                    batteryCard
-                    
-                    // Tilt Trigger Angles Card
-                    tiltCard
-                    
-                    // Display Source & Menu Bar Card
-                    displaySourceCard
-                    
-                    // Animation Physics & Shaders Card
-                    animationPhysicsCard
-                    
-                    // Interactive Test Slider Card
-                    testPreviewCard
+            header
+            Divider().opacity(0.45)
+
+            HStack(spacing: 0) {
+                sidebar
+
+                Divider().opacity(0.45)
+
+                ScrollView {
+                    VStack(spacing: 16) {
+                        presetBar
+
+                        switch section {
+                        case .setup:
+                            setupView
+                        case .looks:
+                            looksView
+                        case .behavior:
+                            behaviorView
+                        case .advanced:
+                            advancedView
+                        }
+                    }
+                    .padding(20)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            
-            Divider()
-            
-            // Bottom Action Footer
-            footerBar
-                .padding(.horizontal, 20)
-                .padding(.vertical, 14)
         }
-        .frame(width: 520, height: 700)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(width: 760, height: 690)
+        .background(panelBackground)
         .onAppear {
             settings.refreshPermissions()
+            settings.refreshLaunchAtLogin()
         }
         .onDisappear {
             settings.isTestModeActive = false
-            settings.testTurnValue = 0.0
+            settings.testTurnValue = 0
             OverlayWindowController.shared.stopOverlay()
         }
     }
-    
-    // MARK: - Header Bar
-    private var headerBar: some View {
-        HStack(spacing: 14) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(cardBackground)
-                    .frame(width: 44, height: 44)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(cardBorder, lineWidth: 0.5)
-                    )
-                
-                Image(systemName: "laptopcomputer")
-                    .font(.system(size: 22, weight: .medium))
-                    .foregroundStyle(settings.isSensorConnected ? Color.accentColor : Color.secondary)
-            }
-            
+
+    private var header: some View {
+        HStack(spacing: 12) {
+            appIcon
+                .frame(width: 42, height: 42)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
             VStack(alignment: .leading, spacing: 2) {
-                Text("macTilt")
-                    .font(.title3)
-                    .fontWeight(.bold)
-                
-                Text("MacBook Clamshell Fold Animation")
+                Text("Tiltglass")
+                    .font(.system(size: 20, weight: .bold, design: .rounded))
+                Text("Physical screen optics for your MacBook lid")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             Spacer()
-            
-            // Real-time Hardware Angle Badge
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(settings.isSensorConnected ? Color.green : Color.orange)
-                    .frame(width: 8, height: 8)
-                
-                VStack(alignment: .trailing, spacing: 1) {
-                    Text("\(Int(settings.currentLidAngle))°")
-                        .font(.system(size: 18, weight: .bold, design: .rounded))
-                    Text(angleStatusText)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .stroke(cardBorder, lineWidth: 0.5)
+
+            statusPill(
+                title: settings.isSensorConnected ? "\(Int(settings.currentLidAngle))°" : "Sensor",
+                subtitle: settings.isSensorConnected ? (settings.isClosing ? "Closing" : "Ready") : "Unavailable",
+                active: settings.isSensorConnected
+            )
+
+            statusPill(
+                title: settings.hasScreenRecordingPermission ? "Capture" : "Permission",
+                subtitle: settings.hasScreenRecordingPermission ? "Ready" : "Required",
+                active: settings.hasScreenRecordingPermission
             )
         }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 15)
     }
-    
-    private var angleStatusText: String {
-        if settings.currentLidAngle >= settings.startTiltAngle {
-            return "Using Mac (Idle)"
-        } else if settings.currentLidAngle <= settings.endTiltAngle {
-            return "Lid Closed"
-        } else if settings.isClosing {
-            let pct = Int(settings.normalizedTurn(for: settings.currentLidAngle, isLidClosing: true) * 100)
-            return "Closing (\(pct)%)"
+
+    @ViewBuilder
+    private var appIcon: some View {
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            Image(nsImage: image).resizable().scaledToFit()
         } else {
-            return "Opening (Idle)"
-        }
-    }
-    
-    // MARK: - Screen Recording Permission Card
-    private var permissionCard: some View {
-        HCISectionCard(title: "Screen Recording Permission", icon: "video.badge.checkmark") {
-            HStack(spacing: 10) {
-                Image(systemName: settings.hasScreenRecordingPermission ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .foregroundStyle(settings.hasScreenRecordingPermission ? Color.green : Color.orange)
-                    .font(.system(size: 15))
-                
-                Text(settings.hasScreenRecordingPermission ? "Permission Active" : "Permission Required")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                
-                InfoButton("Screen Recording", content: "macTilt requires Screen Recording permission to freeze and fold your active desktop in 3D space as you close the lid. All processing is strictly on-device.")
-                
-                Spacer()
-                
-                Button {
-                    settings.refreshPermissions()
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                .help("Re-check permission")
-                
-                if !settings.hasScreenRecordingPermission {
-                    Button("Grant Access") {
-                        if !ScreenCapture.shared.requestPermission() {
-                            ScreenCapture.shared.openSettings()
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                            settings.refreshPermissions()
-                        }
-                    }
-                    .buttonStyle(.glassProminent)
-                    .controlSize(.small)
-                    
-                    Button {
-                        showingPermissionTroubleshooting.toggle()
-                    } label: {
-                        Image(systemName: "questionmark.circle")
-                    }
-                    .buttonStyle(.glass)
-                    .controlSize(.small)
-                    .help("Permission troubleshooting")
-                    .popover(isPresented: $showingPermissionTroubleshooting, arrowEdge: .trailing) {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Permission Troubleshooting")
-                                .font(.headline)
-                            
-                            Text("If already granted in System Settings, macOS requires an app restart to pick up the token.")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            
-                            HStack {
-                                Button("Relaunch App") {
-                                    ScreenCapture.shared.relaunchApp()
-                                }
-                                .buttonStyle(.glassProminent)
-                                .controlSize(.small)
-                                
-                                Button(copiedResetCommand ? "Copied!" : "Copy Reset Command") {
-                                    NSPasteboard.general.clearContents()
-                                    NSPasteboard.general.setString(resetCommand, forType: .string)
-                                    copiedResetCommand = true
-                                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                                        copiedResetCommand = false
-                                    }
-                                }
-                                .buttonStyle(.glass)
-                                .controlSize(.small)
-                            }
-                            
-                            Text(resetCommand)
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .padding(6)
-                                .background(Color.primary.opacity(0.04))
-                                .clipShape(RoundedRectangle(cornerRadius: 4))
-                        }
-                        .padding(14)
-                        .frame(width: 300)
-                    }
-                }
+            ZStack {
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [.blue.opacity(0.65), .black.opacity(0.95)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: "laptopcomputer")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundStyle(.white)
             }
         }
     }
-    
-    // MARK: - Battery & Power Optimization Card
-    private var batteryCard: some View {
-        HCISectionCard(title: "Battery & Performance", icon: "battery.100.bolt") {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(Color.green)
-                    .frame(width: 8, height: 8)
-                
-                Text("Efficient Idle Monitoring")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(Color.green)
-                
-                InfoButton("Battery Efficiency", content: "The lightweight lid sensor remains active while the expensive screen-capture and Metal rendering paths stay dormant during normal use. Capture is pre-armed only when closing approaches the configured start angle.")
-                
-                Spacer()
-                
-                Text(settings.isScreenCaptureDormant ? "Dormant" : "Pre-Arming")
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(PanelSection.allCases) { item in
+                Button {
+                    section = item
+                } label: {
+                    HStack(spacing: 9) {
+                        Image(systemName: item.icon)
+                            .frame(width: 18)
+                        Text(item.title)
+                            .fontWeight(section == item ? .semibold : .regular)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(
+                        section == item
+                            ? Color.accentColor.opacity(0.13)
+                            : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Renderer")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                Text(settings.performanceMode.title)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.primary.opacity(0.05))
-                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 8)
+        }
+        .padding(12)
+        .frame(width: 142)
+    }
+
+    private var presetBar: some View {
+        GlassCard {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PRESET")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+
+                    Menu {
+                        Section("Built-in") {
+                            ForEach(AppSettings.builtInPresets) { preset in
+                                Button {
+                                    settings.applyPreset(id: preset.id)
+                                } label: {
+                                    if settings.activePresetID == preset.id {
+                                        Label(preset.name, systemImage: "checkmark")
+                                    } else {
+                                        Text(preset.name)
+                                    }
+                                }
+                            }
+                        }
+
+                        if !settings.userPresets.isEmpty {
+                            Divider()
+                            Section("My Presets") {
+                                ForEach(settings.userPresets) { preset in
+                                    Button {
+                                        settings.applyPreset(id: preset.id)
+                                    } label: {
+                                        if settings.activePresetID == preset.id {
+                                            Label(preset.name, systemImage: "checkmark")
+                                        } else {
+                                            Text(preset.name)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(settings.activePresetName)
+                                .font(.system(size: 14, weight: .semibold))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+
+                Spacer()
+
+                Button("Save Current") {
+                    newPresetName = settings.activePresetIsUserPreset ? settings.activePresetName : ""
+                    showingPresetSave = true
+                }
+                .buttonStyle(.bordered)
+                .popover(isPresented: $showingPresetSave, arrowEdge: .top) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Save Preset")
+                            .font(.headline)
+                        TextField("Preset name", text: $newPresetName)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 220)
+                        HStack {
+                            Spacer()
+                            Button("Cancel") {
+                                showingPresetSave = false
+                            }
+                            Button("Save") {
+                                settings.saveCurrentPreset(named: newPresetName)
+                                newPresetName = ""
+                                showingPresetSave = false
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(newPresetName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+                    }
+                    .padding(14)
+                }
+
+                if settings.activePresetIsUserPreset {
+                    Button {
+                        settings.deleteActiveUserPreset()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Delete this user preset")
+                }
             }
         }
     }
-    
-    // MARK: - Tilt Triggers Card
-    private var tiltCard: some View {
-        HCISectionCard(title: "Tilt Trigger Thresholds", icon: "angle") {
-            VStack(spacing: 12) {
-                // Start Angle Slider Row
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Start Fold Angle")
-                            .font(.subheadline)
-                        
-                        InfoButton("Start Angle", content: "The MacBook remains in normal usable state above this angle. Folding begins when closed below it.")
-                        
-                        Spacer()
-                        
-                        Text("\(Int(settings.startTiltAngle))°")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $settings.startTiltAngle, in: 40...120, step: 1)
+
+    private var setupView: some View {
+        VStack(spacing: 16) {
+            GlassCard(title: "VIEWING GEOMETRY", icon: "eye") {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("Tiltglass uses your approximate eye position to tune perspective and refraction. The diagram is scaled consistently, so changing either value shows the geometric relationship in real time.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    LaptopGeometryView(
+                        eyeHeightCM: settings.eyeHeightCM,
+                        eyeDistanceCM: settings.eyeDistanceCM
+                    )
+                    .frame(height: 235)
+
+                    valueSlider(
+                        "Eye height",
+                        value: customBinding(\.eyeHeightCM),
+                        range: 20...90,
+                        step: 1,
+                        suffix: " cm"
+                    )
+
+                    valueSlider(
+                        "Eye distance",
+                        value: customBinding(\.eyeDistanceCM),
+                        range: 30...120,
+                        step: 1,
+                        suffix: " cm"
+                    )
                 }
-                
-                Divider()
-                
-                // End Angle Slider Row
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Full Fold Angle")
-                            .font(.subheadline)
-                        
-                        InfoButton("Full Fold Angle", content: "The animation scales smoothly across the closing movement and darkens completely into black at this angle.")
-                        
-                        Spacer()
-                        
-                        Text("\(Int(settings.endTiltAngle))°")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $settings.endTiltAngle, in: 0...20, step: 1)
+            }
+
+            GlassCard(title: "QUICK START", icon: "wand.and.stars") {
+                HStack(spacing: 14) {
+                    quickStartItem(
+                        icon: "1.circle.fill",
+                        title: "Set eye position",
+                        detail: "Match how you normally sit at the Mac."
+                    )
+                    quickStartItem(
+                        icon: "2.circle.fill",
+                        title: "Pick a preset",
+                        detail: "Natural is the neutral starting point."
+                    )
+                    quickStartItem(
+                        icon: "3.circle.fill",
+                        title: "Close the lid",
+                        detail: "The renderer follows the physical hinge."
+                    )
                 }
             }
         }
     }
-    
-    // MARK: - Display Source & Menu Bar Card
-    private var displaySourceCard: some View {
-        HCISectionCard(title: "Display & Menu Bar", icon: "display") {
-            VStack(spacing: 12) {
-                // Display Source Picker Row
+
+    private var looksView: some View {
+        VStack(spacing: 16) {
+            GlassCard(title: "OPTICAL CHARACTER", icon: "circle.hexagongrid.fill") {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 10)], spacing: 10) {
+                    ForEach(OpticalEffectMode.allCases) { effect in
+                        Button {
+                            settings.effectMode = effect
+                            settings.markCustom()
+                        } label: {
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack {
+                                    Text(effect.title)
+                                        .font(.system(size: 13, weight: .semibold))
+                                    Spacer()
+                                    if settings.effectMode == effect {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundStyle(Color.accentColor)
+                                    }
+                                }
+                                Text(effect.subtitle)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .multilineTextAlignment(.leading)
+                                    .lineLimit(2)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 54, alignment: .topLeading)
+                            .padding(10)
+                            .background(
+                                settings.effectMode == effect
+                                    ? Color.accentColor.opacity(0.11)
+                                    : Color.primary.opacity(0.025),
+                                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .stroke(
+                                        settings.effectMode == effect
+                                            ? Color.accentColor.opacity(0.38)
+                                            : borderColor,
+                                        lineWidth: 0.7
+                                    )
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            GlassCard(title: "GLASS TUNING", icon: "slider.horizontal.3") {
+                VStack(spacing: 12) {
+                    valueSlider("Blur", value: customBinding(\.blurStrength), range: 0...1.8, step: 0.01, digits: 2)
+                    valueSlider("Refraction", value: customBinding(\.refractionStrength), range: 0...1.5, step: 0.01, digits: 2)
+                    valueSlider("Chromatic split", value: customBinding(\.chromaticStrength), range: 0...1.5, step: 0.01, digits: 2)
+                    valueSlider("Edge glow", value: customBinding(\.edgeGlow), range: 0...1.5, step: 0.01, digits: 2)
+                    valueSlider("Reflection", value: customBinding(\.reflectionIntensity), range: 0...1.5, step: 0.01, digits: 2)
+                    valueSlider("Saturation", value: customBinding(\.saturation), range: 0.55...1.35, step: 0.01, digits: 2)
+                    valueSlider("Contrast", value: customBinding(\.contrast), range: 0.70...1.35, step: 0.01, digits: 2)
+                    valueSlider("Darkness", value: customBinding(\.darknessStrength), range: 0.35...1.9, step: 0.01, digits: 2)
+                }
+            }
+        }
+    }
+
+    private var behaviorView: some View {
+        VStack(spacing: 16) {
+            GlassCard(title: "MOTION RESPONSE", icon: "waveform.path.ecg") {
+                VStack(spacing: 14) {
+                    valueSlider(
+                        "Closing response",
+                        value: customBinding(\.closingFollowSpeed),
+                        range: 4...36,
+                        step: 1,
+                        suffix: "×",
+                        digits: 0
+                    )
+                    valueSlider(
+                        "Opening response",
+                        value: customBinding(\.openingFollowSpeed),
+                        range: 4...40,
+                        step: 1,
+                        suffix: "×",
+                        digits: 0
+                    )
+
+                    Divider().opacity(0.5)
+
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Performance mode")
+                                .font(.subheadline)
+                            Text(settings.performanceMode.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Picker("", selection: customEnumBinding(\.performanceMode)) {
+                            ForEach(PerformanceMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .frame(width: 180)
+                    }
+                }
+            }
+
+            GlassCard(title: "APP BEHAVIOR", icon: "gearshape.2") {
+                VStack(spacing: 12) {
+                    Toggle(
+                        "Launch Tiltglass at login",
+                        isOn: Binding(
+                            get: { settings.launchAtLogin },
+                            set: { settings.setLaunchAtLogin($0) }
+                        )
+                    )
+
+                    Toggle("Show lid angle in the menu bar", isOn: $settings.showAngleInMenuBar)
+                }
+                .toggleStyle(.switch)
+            }
+        }
+    }
+
+    private var advancedView: some View {
+        VStack(spacing: 16) {
+            GlassCard(title: "LID CALIBRATION", icon: "angle") {
+                VStack(spacing: 12) {
+                    valueSlider(
+                        "Fold begins below",
+                        value: $settings.startTiltAngle,
+                        range: 75...135,
+                        step: 1,
+                        suffix: "°",
+                        digits: 0
+                    )
+
+                    valueSlider(
+                        "Fully closed by",
+                        value: $settings.endTiltAngle,
+                        range: 0...25,
+                        step: 1,
+                        suffix: "°",
+                        digits: 0
+                    )
+
+                    valueSlider("Blur curve", value: customBinding(\.blurCurve), range: 0.5...2.3, step: 0.05, digits: 2)
+                    valueSlider("Perspective strength", value: customBinding(\.perspectiveStrength), range: 0.45...1.65, step: 0.01, digits: 2)
+                }
+            }
+
+            GlassCard(title: "CAPTURE SOURCE", icon: "rectangle.on.rectangle") {
                 HStack {
-                    Text("Screen Source")
+                    Text("Image source")
                         .font(.subheadline)
-                    
-                    InfoButton("Screen Source", content: "Choose between live desktop window freezing, current desktop wallpaper, bundled artwork, or a custom image.")
-                    
                     Spacer()
-                    
                     Picker("", selection: $settings.imageSourceMode) {
                         ForEach(ImageSourceMode.allCases) { mode in
                             Text(mode.title).tag(mode)
                         }
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 170)
+                    .frame(width: 190)
                 }
-                
+
                 if settings.imageSourceMode == .customImage {
                     HStack {
-                        Text(settings.customImagePath.isEmpty ? "No custom photo selected" : (settings.customImagePath as NSString).lastPathComponent)
+                        Text(settings.customImagePath.isEmpty ? "No image selected" : URL(fileURLWithPath: settings.customImagePath).lastPathComponent)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                            .truncationMode(.middle)
                         Spacer()
                         Button("Choose Image...") {
                             selectCustomImage()
                         }
-                        .buttonStyle(.glass)
-                        .controlSize(.small)
-                    }
-                }
-                
-                Divider()
-                
-                // Menu Bar Toggle Row
-                HStack {
-                    Text("Show Lid Angle in Menu Bar")
-                        .font(.subheadline)
-                    
-                    InfoButton("Menu Bar Display", content: "Displays the live numerical degree readout (e.g. 120°) next to the status icon.")
-                    
-                    Spacer()
-                    
-                    Toggle("", isOn: $settings.showAngleInMenuBar)
-                        .labelsHidden()
-                }
-            }
-        }
-    }
-    
-    // MARK: - Animation Physics Card
-    private var animationPhysicsCard: some View {
-        HCISectionCard(title: "Physics & Shaders", icon: "slider.horizontal.3") {
-            VStack(spacing: 12) {
-                HStack(spacing: 8) {
-                    Button("Natural") { applyPreset(.natural) }
-                    Button("Cinematic") { applyPreset(.cinematic) }
-                    Button("Snappy") { applyPreset(.snappy) }
-                }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-
-                Divider()
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Closing Responsiveness")
-                            .font(.subheadline)
-                        
-                        InfoButton("Follow Speed", content: "Controls the exponential smoothing physics of the display turn.")
-                        
-                        Spacer()
-                        
-                        Text(String(format: "%.0f", settings.closingFollowSpeed))
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $settings.closingFollowSpeed, in: 6...36, step: 1)
-                }
-
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Opening Responsiveness")
-                            .font(.subheadline)
-                        Spacer()
-                        Text(String(format: "%.0f", settings.openingFollowSpeed))
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $settings.openingFollowSpeed, in: 6...36, step: 1)
-                }
-                
-                Divider()
-                
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack {
-                        Text("Blur Amount")
-                            .font(.subheadline)
-                        Spacer()
-                        Text(String(format: "%.1fx", settings.blurStrength))
-                            .font(.caption)
-                            .fontWeight(.semibold)
-                            .monospacedDigit()
-                    }
-                    Slider(value: $settings.blurStrength, in: 0.0...2.0, step: 0.1)
-                }
-
-                DisclosureGroup("Advanced", isExpanded: $showingAdvanced) {
-                    VStack(spacing: 10) {
-                        advancedSlider("Blur Curve", value: $settings.blurCurve, range: 0.4...2.5)
-                        advancedSlider("Perspective", value: $settings.perspectiveStrength, range: 0.0...2.0)
-                        advancedSlider("Reflection / Highlight", value: $settings.reflectionIntensity, range: 0.0...2.5)
-                        advancedSlider("Darkness / Void", value: $settings.darknessStrength, range: 0.0...1.25)
                     }
                     .padding(.top, 8)
                 }
             }
-        }
-    }
-    
-    // MARK: - Test Preview Card
-    private var testPreviewCard: some View {
-        HCISectionCard(title: "Interactive Preview", icon: "play.rectangle") {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack {
-                    Text("Preview Animation")
-                        .font(.subheadline)
-                    
-                    InfoButton("Interactive Preview", content: "Scrub and inspect the fold on your screen without physically moving the lid.")
-                    
-                    Spacer()
-                    
-                    Toggle("", isOn: $settings.isTestModeActive)
-                        .labelsHidden()
-                        .onChange(of: settings.isTestModeActive) { _, newValue in
-                            if !newValue {
-                                // Immediately clear turn value so the overlay hides at once
-                                settings.testTurnValue = 0.0
-                            }
+
+            GlassCard(title: "VALIDATION", icon: "stethoscope") {
+                VStack(spacing: 12) {
+                    diagnosticRow(
+                        title: "Lid sensor",
+                        detail: settings.sensorStatusMessage,
+                        good: settings.isSensorConnected
+                    )
+
+                    diagnosticRow(
+                        title: "Screen Recording",
+                        detail: settings.hasScreenRecordingPermission ? "Permission active" : "Permission required",
+                        good: settings.hasScreenRecordingPermission
+                    )
+
+                    HStack {
+                        Button("Re-check Permission") {
+                            settings.refreshPermissions()
                         }
-                }
-                
-                if settings.isTestModeActive {
-                    Divider()
-                    
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text("Fold Progress")
-                                .font(.subheadline)
-                            Spacer()
-                            Text("\(Int(settings.testTurnValue * 100))%")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .monospacedDigit()
-                        }
-                        Slider(value: $settings.testTurnValue, in: 0.0...1.0) { isEditing in
-                            if isEditing {
-                                settings.isTestModeActive = true
-                                OverlayWindowController.shared.captureScreenAsync()
-                            } else {
-                                // Stop the overlay on screen as soon as the user leaves the slider
-                                withAnimation(.easeOut(duration: 0.25)) {
-                                    settings.testTurnValue = 0.0
-                                }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    if settings.testTurnValue == 0.0 {
-                                        settings.isTestModeActive = false
-                                        OverlayWindowController.shared.stopOverlay()
-                                    }
+
+                        if !settings.hasScreenRecordingPermission {
+                            Button("Open Privacy Settings") {
+                                if !ScreenCapture.shared.requestPermission() {
+                                    ScreenCapture.shared.openSettings()
                                 }
                             }
+                            .buttonStyle(.borderedProminent)
+
+                            Button(copiedResetCommand ? "Copied" : "Copy TCC Reset") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(resetCommand, forType: .string)
+                                copiedResetCommand = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                                    copiedResetCommand = false
+                                }
+                            }
+                        }
+
+                        Spacer()
+
+                        Button("Refresh Snapshot") {
+                            OverlayWindowController.shared.captureScreenAsync()
                         }
                     }
-                    .transition(.opacity)
+                    .controlSize(.small)
+
+                    Divider().opacity(0.5)
+
+                    Toggle("Enable diagnostic fold control", isOn: $settings.isTestModeActive)
+                        .toggleStyle(.switch)
+
+                    if settings.isTestModeActive {
+                        HStack {
+                            Text("Test fold")
+                                .font(.caption)
+                            Slider(value: $settings.testTurnValue, in: 0...1)
+                            Text("\(Int(settings.testTurnValue * 100))%")
+                                .font(.caption)
+                                .monospacedDigit()
+                                .frame(width: 40, alignment: .trailing)
+                        }
+                    }
                 }
             }
         }
     }
-    
-    // MARK: - Bottom Footer Bar
-    private var footerBar: some View {
-        HStack {
-            Button("Reset to Defaults") {
-                settings.startTiltAngle = 115.0
-                settings.endTiltAngle = 3.0
-                settings.closingFollowSpeed = 16.0
-                settings.openingFollowSpeed = 20.0
-                settings.imageSourceMode = .liveCapture
-                settings.blurStrength = 0.5
-                settings.reflectionIntensity = 0.0
-                settings.blurCurve = 1.25
-                settings.perspectiveStrength = 1.0
-                settings.darknessStrength = 1.0
-                settings.showAngleInMenuBar = true
-                settings.isTestModeActive = false
-                settings.testTurnValue = 0.0
+
+    private func statusPill(title: String, subtitle: String, active: Bool) -> some View {
+        HStack(spacing: 7) {
+            Circle()
+                .fill(active ? Color.green : Color.orange)
+                .frame(width: 7, height: 7)
+
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                Text(subtitle)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
             }
-            .buttonStyle(.glass)
-            .controlSize(.regular)
-            
-            Button("Welcome Guide") {
-                MenuBarController.shared.openOnboardingWindow()
-            }
-            .buttonStyle(.glass)
-            .controlSize(.regular)
-            
-            Spacer()
-            
-            Button("Done") {
-                settings.isTestModeActive = false
-                settings.testTurnValue = 0.0
-                OverlayWindowController.shared.stopOverlay()
-                NSApp.keyWindow?.orderOut(nil)
-            }
-            .buttonStyle(.glassProminent)
-            .controlSize(.regular)
-            .keyboardShortcut(.defaultAction)
         }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(borderColor, lineWidth: 0.5))
     }
 
-    private enum AnimationPreset { case natural, cinematic, snappy }
-
-    private func applyPreset(_ preset: AnimationPreset) {
-        switch preset {
-        case .natural:
-            settings.closingFollowSpeed = 16
-            settings.openingFollowSpeed = 20
-            settings.blurStrength = 0.5
-            settings.blurCurve = 1.25
-            settings.perspectiveStrength = 1.0
-            settings.reflectionIntensity = 0.0
-            settings.darknessStrength = 1.0
-        case .cinematic:
-            settings.closingFollowSpeed = 10
-            settings.openingFollowSpeed = 12
-            settings.blurStrength = 1.1
-            settings.blurCurve = 1.55
-            settings.perspectiveStrength = 1.25
-            settings.reflectionIntensity = 0.8
-            settings.darknessStrength = 1.1
-        case .snappy:
-            settings.closingFollowSpeed = 28
-            settings.openingFollowSpeed = 32
-            settings.blurStrength = 0.25
-            settings.blurCurve = 0.9
-            settings.perspectiveStrength = 0.85
-            settings.reflectionIntensity = 0.2
-            settings.darknessStrength = 0.9
-        }
-    }
-
-    private func advancedSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack {
-                Text(title).font(.caption)
-                Spacer()
-                Text(String(format: "%.1fx", value.wrappedValue))
+    private func quickStartItem(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 9) {
+            Image(systemName: icon)
+                .foregroundStyle(Color.accentColor)
+                .font(.system(size: 15, weight: .semibold))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                Text(detail)
                     .font(.caption2)
-                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
-            Slider(value: value, in: range, step: 0.1)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func diagnosticRow(title: String, detail: String, good: Bool) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: good ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundStyle(good ? Color.green : Color.orange)
+            Text(title)
+                .font(.subheadline)
+                .fontWeight(.medium)
+            Spacer()
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
         }
     }
-    
+
+    private func valueSlider(
+        _ title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        suffix: String = "",
+        digits: Int = 1
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(title)
+                    .font(.caption)
+                Spacer()
+                Text(String(format: "%.*f", digits, value.wrappedValue) + suffix)
+                    .font(.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: range, step: step)
+        }
+    }
+
+    private func customBinding(_ keyPath: ReferenceWritableKeyPath<AppSettings, Double>) -> Binding<Double> {
+        Binding(
+            get: { settings[keyPath: keyPath] },
+            set: {
+                settings[keyPath: keyPath] = $0
+                settings.markCustom()
+            }
+        )
+    }
+
+    private func customEnumBinding<T>(_ keyPath: ReferenceWritableKeyPath<AppSettings, T>) -> Binding<T> {
+        Binding(
+            get: { settings[keyPath: keyPath] },
+            set: {
+                settings[keyPath: keyPath] = $0
+                settings.markCustom()
+            }
+        )
+    }
+
     private func selectCustomImage() {
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.image, .png, .jpeg]
@@ -589,83 +658,144 @@ public struct LiquidGlassControlPanel: View {
     }
 }
 
-// MARK: - Apple HCI Grouped Section Card Component
-private struct HCISectionCard<Content: View>: View {
-    let title: String
-    let icon: String
-    let content: Content
-    
-    init(title: String, icon: String, @ViewBuilder content: () -> Content) {
+private enum PanelSection: String, CaseIterable, Identifiable {
+    case setup
+    case looks
+    case behavior
+    case advanced
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .setup: return "Setup"
+        case .looks: return "Looks"
+        case .behavior: return "Behavior"
+        case .advanced: return "Advanced"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .setup: return "eye"
+        case .looks: return "circle.hexagongrid"
+        case .behavior: return "waveform.path"
+        case .advanced: return "slider.horizontal.3"
+        }
+    }
+}
+
+private struct GlassCard<Content: View>: View {
+    private let title: String?
+    private let icon: String?
+    private let content: Content
+
+    init(title: String? = nil, icon: String? = nil, @ViewBuilder content: () -> Content) {
         self.title = title
         self.icon = icon
         self.content = content()
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Card Title Label
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                
-                Text(title.uppercased())
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
+            if let title {
+                HStack(spacing: 6) {
+                    if let icon {
+                        Image(systemName: icon)
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    Text(title)
+                        .font(.system(size: 10, weight: .semibold))
+                }
+                .foregroundStyle(.secondary)
             }
-            .padding(.leading, 2)
-            
-            // Card Content Container
-            VStack(alignment: .leading, spacing: 0) {
-                content
-            }
-            .padding(14)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(cardBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(cardBorder, lineWidth: 0.5)
-            )
+
+            content
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 13, style: .continuous)
+                .stroke(borderColor, lineWidth: 0.6)
+        )
     }
 }
 
-// MARK: - Apple HCI Info Popover Button
-private struct InfoButton: View {
-    let title: String
-    let content: String
-    @State private var isShowing: Bool = false
-    
-    init(_ title: String = "", content: String) {
-        self.title = title
-        self.content = content
-    }
-    
+private struct LaptopGeometryView: View {
+    let eyeHeightCM: Double
+    let eyeDistanceCM: Double
+
     var body: some View {
-        Button {
-            isShowing.toggle()
-        } label: {
-            Image(systemName: "info.circle")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $isShowing, arrowEdge: .trailing) {
-            VStack(alignment: .leading, spacing: 6) {
-                if !title.isEmpty {
-                    Text(title)
-                        .font(.headline)
+        GeometryReader { proxy in
+            let w = proxy.size.width
+            let h = proxy.size.height
+            let scale = min((w - 85) / 125.0, (h - 40) / 95.0)
+            let hingeX = 54.0
+            let baseY = h - 28.0
+            let deckLength = 23.8 * scale
+            let displayHeight = 21.0 * scale
+            let eyeX = min(w - 28, hingeX + eyeDistanceCM * scale)
+            let eyeY = max(22, baseY - eyeHeightCM * scale)
+
+            ZStack(alignment: .topLeading) {
+                Path { path in
+                    path.move(to: CGPoint(x: hingeX, y: baseY))
+                    path.addLine(to: CGPoint(x: hingeX + deckLength, y: baseY))
+
+                    path.move(to: CGPoint(x: hingeX, y: baseY))
+                    path.addLine(to: CGPoint(x: hingeX + displayHeight * 0.20, y: baseY - displayHeight))
+
+                    path.move(to: CGPoint(x: hingeX, y: baseY))
+                    path.addLine(to: CGPoint(x: eyeX, y: baseY))
+
+                    path.move(to: CGPoint(x: eyeX, y: baseY))
+                    path.addLine(to: CGPoint(x: eyeX, y: eyeY))
                 }
-                Text(content)
-                    .font(.caption)
+                .stroke(Color.secondary.opacity(0.60), style: StrokeStyle(lineWidth: 1.4, lineCap: .round, dash: [5, 5]))
+
+                Path { path in
+                    path.move(to: CGPoint(x: hingeX, y: baseY))
+                    path.addLine(to: CGPoint(x: hingeX + deckLength, y: baseY))
+                    path.move(to: CGPoint(x: hingeX, y: baseY))
+                    path.addLine(to: CGPoint(x: hingeX + displayHeight * 0.20, y: baseY - displayHeight))
+                }
+                .stroke(Color.primary.opacity(0.82), style: StrokeStyle(lineWidth: 4.2, lineCap: .round))
+
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 13, height: 13)
+                    .position(x: eyeX, y: eyeY)
+
+                Image(systemName: "eye.fill")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.white)
+                    .position(x: eyeX, y: eyeY)
+
+                Text("\(Int(eyeHeightCM)) cm")
+                    .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .lineSpacing(2)
+                    .position(x: min(w - 35, eyeX + 30), y: (eyeY + baseY) / 2)
+
+                Text("\(Int(eyeDistanceCM)) cm")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .position(x: (hingeX + eyeX) / 2, y: baseY + 13)
+
+                Text("hinge")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                    .position(x: hingeX, y: baseY + 13)
             }
-            .padding(12)
-            .frame(width: 260)
         }
+        .padding(.horizontal, 4)
+        .background(
+            Color.primary.opacity(0.022),
+            in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(borderColor, lineWidth: 0.5)
+        )
     }
 }

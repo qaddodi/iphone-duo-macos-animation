@@ -4,185 +4,202 @@ import SwiftUI
 
 public final class MenuBarController: NSObject, NSWindowDelegate {
     public static let shared = MenuBarController()
-    
+
     private var statusItem: NSStatusItem?
     private var controlPanelWindow: NSWindow?
     private var onboardingWindow: NSWindow?
     private var angleMenuItem: NSMenuItem?
+    private var presetRootItem: NSMenuItem?
     private var lastAngle: Double = 120.0
-    private var lastIsConnected: Bool = false
-    
+    private var lastIsConnected = false
+
     public override init() {
         super.init()
         setupStatusItem()
     }
-    
+
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "macTilt")
+            button.image = NSImage(systemSymbolName: "laptopcomputer", accessibilityDescription: "Tiltglass")
             button.imagePosition = .imageLeading
             button.title = ""
         }
-        
-        let menu = NSMenu()
-        
-        let header = NSMenuItem(title: "macTilt Clamshell Animation", action: nil, keyEquivalent: "")
-        header.isEnabled = false
-        menu.addItem(header)
-        
-        let angleItem = NSMenuItem(title: "Lid Sensor: Initializing...", action: nil, keyEquivalent: "")
-        angleItem.isEnabled = false
-        self.angleMenuItem = angleItem
-        menu.addItem(angleItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        let openSettings = NSMenuItem(title: "Control Panel & Settings...", action: #selector(openControlPanel), keyEquivalent: ",")
-        openSettings.target = self
-        menu.addItem(openSettings)
-        
-        let welcomeItem = NSMenuItem(title: "Welcome Guide & Permissions...", action: #selector(openOnboardingWindow), keyEquivalent: "")
-        welcomeItem.target = self
-        menu.addItem(welcomeItem)
-        
-        let testToggle = NSMenuItem(title: "Toggle Test Preview Slider", action: #selector(toggleTestMode), keyEquivalent: "t")
-        testToggle.target = self
-        menu.addItem(testToggle)
-        
-        let captureItem = NSMenuItem(title: "Re-capture Screen Snapshot", action: #selector(recaptureScreen), keyEquivalent: "r")
-        captureItem.target = self
-        menu.addItem(captureItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        let quitItem = NSMenuItem(title: "Quit macTilt", action: #selector(quitApp), keyEquivalent: "q")
-        quitItem.target = self
-        menu.addItem(quitItem)
-        
-        item.menu = menu
-        self.statusItem = item
-        
+
+        statusItem = item
+        rebuildMenu()
         refreshMenuBarTitle()
     }
-    
+
+    private func rebuildMenu() {
+        let menu = NSMenu()
+
+        let header = NSMenuItem(title: "Tiltglass", action: nil, keyEquivalent: "")
+        header.isEnabled = false
+        menu.addItem(header)
+
+        let angle = NSMenuItem(title: "Lid Sensor: Initializing...", action: nil, keyEquivalent: "")
+        angle.isEnabled = false
+        angleMenuItem = angle
+        menu.addItem(angle)
+
+        menu.addItem(.separator())
+
+        let presetItem = NSMenuItem(title: "Preset", action: nil, keyEquivalent: "")
+        presetRootItem = presetItem
+        menu.addItem(presetItem)
+        rebuildPresetMenu()
+
+        let openSettings = NSMenuItem(title: "Settings...", action: #selector(openControlPanel), keyEquivalent: ",")
+        openSettings.target = self
+        menu.addItem(openSettings)
+
+        let welcome = NSMenuItem(title: "Welcome & Privacy...", action: #selector(openOnboardingWindow), keyEquivalent: "")
+        welcome.target = self
+        menu.addItem(welcome)
+
+        let capture = NSMenuItem(title: "Refresh Screen Snapshot", action: #selector(recaptureScreen), keyEquivalent: "r")
+        capture.target = self
+        menu.addItem(capture)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(title: "Quit Tiltglass", action: #selector(quitApp), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+
+        statusItem?.menu = menu
+    }
+
+    public func rebuildPresetMenu() {
+        guard let root = presetRootItem else { return }
+
+        let submenu = NSMenu()
+        let settings = AppSettings.shared
+
+        for preset in AppSettings.builtInPresets {
+            let item = NSMenuItem(title: preset.name, action: #selector(applyPresetMenuItem(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = preset.id
+            item.state = settings.activePresetID == preset.id ? .on : .off
+            submenu.addItem(item)
+        }
+
+        if !settings.userPresets.isEmpty {
+            submenu.addItem(.separator())
+            for preset in settings.userPresets {
+                let item = NSMenuItem(title: preset.name, action: #selector(applyPresetMenuItem(_:)), keyEquivalent: "")
+                item.target = self
+                item.representedObject = preset.id
+                item.state = settings.activePresetID == preset.id ? .on : .off
+                submenu.addItem(item)
+            }
+        }
+
+        root.submenu = submenu
+    }
+
+    @objc private func applyPresetMenuItem(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        AppSettings.shared.applyPreset(id: id)
+        rebuildPresetMenu()
+    }
+
     public func updateAngleDisplay(angle: Double, isConnected: Bool) {
         lastAngle = angle
         lastIsConnected = isConnected
-        
+
         if let button = statusItem?.button {
-            if AppSettings.shared.showAngleInMenuBar {
-                button.title = " \(Int(angle))°"
-            } else {
-                button.title = ""
-            }
+            button.title = AppSettings.shared.showAngleInMenuBar ? " \(Int(angle))°" : ""
         }
-        
-        if let angleItem = self.angleMenuItem {
+
+        if let angleMenuItem {
             if isConnected {
-                let isFolded = angle < AppSettings.shared.startTiltAngle
-                let status = AppSettings.shared.isClosing
-                    ? "Closing (\(Int(angle))°)"
-                    : (isFolded ? "Opening (\(Int(angle))°)" : "Idle (\(Int(angle))°)")
-                angleItem.title = "Lid: \(status)"
+                let status = AppSettings.shared.isClosing ? "Closing" : "Ready"
+                angleMenuItem.title = "Lid: \(status) \(Int(angle))°"
             } else {
-                angleItem.title = "Lid Sensor: Disconnected"
+                angleMenuItem.title = "Lid Sensor: Unavailable"
             }
         }
     }
-    
+
     public func refreshMenuBarTitle() {
-        if let button = statusItem?.button {
-            if AppSettings.shared.showAngleInMenuBar {
-                button.title = " \(Int(lastAngle))°"
-            } else {
-                button.title = ""
-            }
-        }
+        guard let button = statusItem?.button else { return }
+        button.title = AppSettings.shared.showAngleInMenuBar ? " \(Int(lastAngle))°" : ""
     }
-    
+
     @objc public func openControlPanel() {
-        if let existing = controlPanelWindow {
-            existing.makeKeyAndOrderFront(nil)
+        if let window = controlPanelWindow {
+            window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        
-        let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 680),
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 760, height: 690),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        win.center()
-        win.titlebarAppearsTransparent = true
-        win.titleVisibility = .hidden
-        win.isMovableByWindowBackground = true
-        win.contentViewController = NSHostingController(rootView: LiquidGlassControlPanel())
-        win.isReleasedWhenClosed = false
-        
-        self.controlPanelWindow = win
-        win.delegate = self
-        win.makeKeyAndOrderFront(nil)
+
+        window.center()
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+        window.contentViewController = NSHostingController(rootView: LiquidGlassControlPanel())
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+
+        controlPanelWindow = window
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
-    
+
     @objc public func openOnboardingWindow() {
-        if let existing = onboardingWindow {
-            existing.makeKeyAndOrderFront(nil)
+        if let window = onboardingWindow {
+            window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
-        
-        let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 620),
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 560, height: 640),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
-        win.center()
-        win.titlebarAppearsTransparent = true
-        win.titleVisibility = .hidden
-        win.isMovableByWindowBackground = true
-        
-        let onboardingView = OnboardingView { [weak self, weak win] in
-            win?.close()
+
+        window.center()
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
+        window.isMovableByWindowBackground = true
+
+        let view = OnboardingView { [weak self, weak window] in
+            window?.close()
             self?.openControlPanel()
         }
-        
-        win.contentViewController = NSHostingController(rootView: onboardingView)
-        win.isReleasedWhenClosed = false
-        
-        self.onboardingWindow = win
-        win.makeKeyAndOrderFront(nil)
+
+        window.contentViewController = NSHostingController(rootView: view)
+        window.isReleasedWhenClosed = false
+
+        onboardingWindow = window
+        window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
-    
-    // MARK: - NSWindowDelegate
-    
+
     public func windowWillClose(_ notification: Notification) {
-        // When the control panel is dismissed, always clear test mode so the
-        // fold overlay doesn't stay frozen on screen.
         if AppSettings.shared.isTestModeActive {
             AppSettings.shared.isTestModeActive = false
-            AppSettings.shared.testTurnValue = 0.0
+            AppSettings.shared.testTurnValue = 0
+            OverlayWindowController.shared.stopOverlay()
         }
     }
-    
-    @objc private func toggleTestMode() {
-        let current = AppSettings.shared.isTestModeActive
-        AppSettings.shared.isTestModeActive = !current
-        if !current {
-            AppSettings.shared.testTurnValue = 0.5
-        } else {
-            AppSettings.shared.testTurnValue = 0.0
-        }
-    }
-    
+
     @objc private func recaptureScreen() {
         OverlayWindowController.shared.captureScreenAsync()
     }
-    
+
     @objc private func quitApp() {
         NSApp.terminate(nil)
     }

@@ -2,192 +2,167 @@ import SwiftUI
 import AppKit
 
 public struct OnboardingView: View {
-    @ObservedObject var settings: AppSettings = AppSettings.shared
+    @ObservedObject private var settings = AppSettings.shared
     public var onDismiss: (() -> Void)?
-    
+
     public init(onDismiss: (() -> Void)? = nil) {
         self.onDismiss = onDismiss
     }
-    
+
     public var body: some View {
         VStack(spacing: 0) {
-            // Header
             VStack(spacing: 12) {
-                appIconView
-                    .frame(width: 76, height: 76)
-                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
-                
-                VStack(spacing: 4) {
-                    Text("Welcome to macTilt")
-                        .font(.system(size: 26, weight: .bold))
-                    
-                    Text("Realistic 3D clamshell folding animation for your MacBook display.")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                }
+                appIcon
+                    .frame(width: 82, height: 82)
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: .black.opacity(0.20), radius: 14, y: 7)
+
+                Text("Welcome to Tiltglass")
+                    .font(.system(size: 27, weight: .bold, design: .rounded))
+
+                Text("A local, hardware-synchronized optical layer for the physical motion of your MacBook display.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 430)
             }
-            .padding(.top, 32)
-            .padding(.horizontal, 28)
-            
-            // Feature Highlights
+            .padding(.top, 34)
+
             VStack(spacing: 16) {
-                FeatureRow(
-                    icon: "laptopcomputer",
-                    iconColor: .blue,
-                    title: "Physical Clamshell Folding",
-                    subtitle: "Synchronized 1:1 with Apple's internal lid angle sensor. Folds seamlessly from up to down as you close the lid."
+                feature(
+                    icon: "eye",
+                    title: "Calibrated to how you sit",
+                    detail: "Eye height and viewing distance shape perspective and refraction. Calibration stays separate from visual presets."
                 )
-                
-                FeatureRow(
-                    icon: "battery.100.bolt",
-                    iconColor: .green,
-                    title: "Zero Idle Battery Impact",
-                    subtitle: "100% dormant during normal use with zero background polling. Captures are pre-armed strictly during physical closing motion."
+
+                feature(
+                    icon: "circle.hexagongrid.fill",
+                    title: "Eight optical characters",
+                    detail: "Natural, Duo, Frosted, Prism, Deep Glass, Crystal, Soft Focus, and Void can all be tuned live."
                 )
-                
-                FeatureRow(
-                    icon: "record.circle.fill",
-                    iconColor: .orange,
-                    title: "Screen Recording Permission",
-                    subtitle: "Freezes your active workspace into 3D space when closing. Processed strictly on-device with no network access."
+
+                feature(
+                    icon: "hand.raised.fill",
+                    title: "Privacy by design",
+                    detail: "Screen capture is processed locally for the fold effect. Tiltglass has no account system and does not upload your screen."
+                )
+
+                feature(
+                    icon: "battery.100percent",
+                    title: "Dormant until you move the lid",
+                    detail: "The capture and Metal paths remain idle during normal use and pre-arm only as the lid enters the closing zone."
                 )
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 24)
-            
-            // Permission Action Card
+            .padding(.horizontal, 30)
+            .padding(.top, 26)
+
             VStack(spacing: 10) {
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(settings.hasScreenRecordingPermission ? Color.green : Color.orange)
-                        .frame(width: 9, height: 9)
-                    
-                    Text(settings.hasScreenRecordingPermission ? "Screen Recording Permission Active" : "Screen Recording Permission Required")
-                        .font(.subheadline)
-                        .fontWeight(.semibold)
-                    
+                HStack(spacing: 9) {
+                    Image(systemName: settings.hasScreenRecordingPermission ? "checkmark.circle.fill" : "record.circle")
+                        .foregroundStyle(settings.hasScreenRecordingPermission ? Color.green : Color.orange)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(settings.hasScreenRecordingPermission ? "Screen Recording is ready" : "Screen Recording permission")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                        Text(settings.hasScreenRecordingPermission ? "Tiltglass can capture the active display when the lid moves." : "Required only so the current display can become the local fold texture.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
                     Spacer()
-                    
+
                     if !settings.hasScreenRecordingPermission {
-                        Button(action: {
-                            ScreenCapture.shared.requestPermission()
-                            ScreenCapture.shared.openSettings()
-                        }) {
-                            Text("Grant Access...")
+                        Button("Grant Access") {
+                            if !ScreenCapture.shared.requestPermission() {
+                                ScreenCapture.shared.openSettings()
+                            }
                         }
                         .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
-                    }
-                }
-                
-                if !settings.hasScreenRecordingPermission {
-                    HStack {
-                        Text("After toggling access in System Settings, click Relaunch to apply.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        Spacer()
-                        
-                        Button(action: {
-                            ScreenCapture.shared.relaunchApp()
-                        }) {
-                            Label("Relaunch", systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.mini)
                     }
                 }
             }
             .padding(14)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                    .stroke(Color.primary.opacity(0.10), lineWidth: 0.5)
             )
-            .padding(.horizontal, 28)
-            
+            .padding(.horizontal, 30)
+            .padding(.top, 20)
+
             Spacer()
-            
-            // Bottom Action
+
             HStack {
+                Button("Privacy Settings") {
+                    ScreenCapture.shared.openSettings()
+                }
+
                 Spacer()
-                Button(action: {
+
+                Button("Continue") {
                     settings.hasCompletedOnboarding = true
                     onDismiss?()
-                }) {
-                    Text("Get Started")
-                        .font(.headline)
-                        .frame(minWidth: 140)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .keyboardShortcut(.defaultAction)
-                Spacer()
             }
+            .padding(.horizontal, 30)
             .padding(.bottom, 28)
-            .padding(.top, 12)
         }
-        .frame(width: 520, height: 620)
+        .frame(width: 560, height: 640)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear {
+            settings.refreshPermissions()
+        }
     }
-    
+
     @ViewBuilder
-    private var appIconView: some View {
-        if let iconUrl = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
-           let img = NSImage(contentsOf: iconUrl) {
-            Image(nsImage: img)
-                .resizable()
-                .scaledToFit()
-        } else if let appIcon = NSApplication.shared.applicationIconImage {
-            Image(nsImage: appIcon)
+    private var appIcon: some View {
+        if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "png"),
+           let image = NSImage(contentsOf: url) {
+            Image(nsImage: image)
                 .resizable()
                 .scaledToFit()
         } else {
-            Image(systemName: "laptopcomputer")
-                .resizable()
-                .scaledToFit()
-                .foregroundColor(.accentColor)
-                .padding(16)
-                .background(Color.blue.opacity(0.1))
+            ZStack {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [.cyan.opacity(0.55), .blue.opacity(0.55), .black],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                Image(systemName: "laptopcomputer")
+                    .font(.system(size: 34, weight: .medium))
+                    .foregroundStyle(.white)
+            }
         }
     }
-}
 
-// MARK: - Apple HCI Feature Row
-private struct FeatureRow: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let subtitle: String
-    
-    var body: some View {
-        HStack(alignment: .top, spacing: 14) {
+    private func feature(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 13) {
             ZStack {
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(iconColor.opacity(0.12))
-                    .frame(width: 36, height: 36)
-                
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.11))
+                    .frame(width: 38, height: 38)
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(iconColor)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Color.accentColor)
             }
-            
+
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                Text(subtitle)
+                Text(detail)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                    .lineSpacing(2)
             }
-            
+
             Spacer(minLength: 0)
         }
     }
