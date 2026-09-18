@@ -28,3 +28,5 @@ Run ./build.sh or use the GitHub Actions workflow. The workflow produces a zippe
 ## Release signing
 
 scripts/package_release.sh uses ad-hoc signing by default. Set DEVELOPER_ID_APPLICATION to a Developer ID Application identity for distribution signing. Set NOTARY_PROFILE to a configured notarytool keychain profile to submit and staple automatically.
+
+Build marker: 2026-09-17
