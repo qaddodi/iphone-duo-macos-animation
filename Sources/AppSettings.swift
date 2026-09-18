@@ -303,8 +303,6 @@ public final class AppSettings: ObservableObject {
     ]
 
     private init() {
-        migrateLegacyPreferencesIfNeeded()
-
         hasCompletedOnboarding = defaults.bool(forKey: kHasCompletedOnboarding)
         startTiltAngle = Self.value(defaults, key: kStartTiltAngle, fallback: 115.0)
         endTiltAngle = Self.value(defaults, key: kEndTiltAngle, fallback: 3.0)
@@ -321,20 +319,21 @@ public final class AppSettings: ObservableObject {
         effectMode = OpticalEffectMode(rawValue: defaults.integer(forKey: kEffectMode)) ?? .natural
         performanceMode = PerformanceMode(rawValue: defaults.integer(forKey: kPerformanceMode)) ?? .balanced
 
-        blurStrength = Self.value(defaults, key: kBlurStrength, fallback: 0.55)
+        blurStrength = Self.value(defaults, key: kBlurStrength, fallback: Self.value(defaults, key: "mactilt_blurStrength", fallback: 0.55))
         refractionStrength = Self.value(defaults, key: kRefractionStrength, fallback: 0.35)
         chromaticStrength = Self.value(defaults, key: kChromaticStrength, fallback: 0.05)
         edgeGlow = Self.value(defaults, key: kEdgeGlow, fallback: 0.16)
-        reflectionIntensity = Self.value(defaults, key: kReflectionIntensity, fallback: 0.18)
+        reflectionIntensity = Self.value(defaults, key: kReflectionIntensity, fallback: Self.value(defaults, key: "mactilt_reflectionIntensity", fallback: 0.18))
         saturation = Self.value(defaults, key: kSaturation, fallback: 1.0)
         contrast = Self.value(defaults, key: kContrast, fallback: 1.0)
-        darknessStrength = Self.value(defaults, key: kDarknessStrength, fallback: 1.0)
-        blurCurve = Self.value(defaults, key: kBlurCurve, fallback: 1.25)
-        perspectiveStrength = Self.value(defaults, key: kPerspectiveStrength, fallback: 1.0)
+        darknessStrength = Self.value(defaults, key: kDarknessStrength, fallback: Self.value(defaults, key: "mactilt_darknessStrength", fallback: 1.0))
+        blurCurve = Self.value(defaults, key: kBlurCurve, fallback: Self.value(defaults, key: "mactilt_blurCurve", fallback: 1.25))
+        perspectiveStrength = Self.value(defaults, key: kPerspectiveStrength, fallback: Self.value(defaults, key: "mactilt_perspectiveStrength", fallback: 1.0))
         eyeHeightCM = Self.value(defaults, key: kEyeHeight, fallback: 45.0)
         eyeDistanceCM = Self.value(defaults, key: kEyeDistance, fallback: 60.0)
         activePresetID = defaults.string(forKey: kActivePresetID) ?? "builtin.natural"
 
+        migrateLegacyPreferencesIfNeeded()
         loadUserPresets()
         refreshLaunchAtLogin()
         refreshPermissions()
